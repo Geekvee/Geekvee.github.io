@@ -136,6 +136,65 @@ range</p></li>
       </tags>
   </entry>
   <entry>
+    <title>Android Toolchain编译与GDB调试</title>
+    <url>/2022/08/26/Android-Toolchain%E7%BC%96%E8%AF%91%E4%B8%8EGDB%E8%B0%83%E8%AF%95/</url>
+    <content><![CDATA[<meta name="referrer" content="no-referrer" />
+<p>在进行linux主机上进行arm跨平台进行pure c++开发时，可能混有Neon
+intrinsic或者ARM
+assembly代码，此时进行代码编译和调试，可以使用standalone
+toolchain进行编译，使用gdb+gdbserver进行调试。</p>
+<span id="more"></span>
+<p>首先需要在NDK
+website上下载一个NDK工具包并解压，本人使用的是r14b版本，链接：<a
+href="https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip">https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip</a></p>
+<ul>
+<li><p>Standalone Toolchain的编译</p>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="built_in">cd</span> android-ndk-r14b/build/tools/</span><br><span class="line">./make-standalone-toolchain.sh --platform=android-21 --install-dir=./android-aarch64 --arch=arm64</span><br><span class="line">./make-standalone-toolchain.sh --platform=android-21 --install-dir=./android-armv7 --arch=arm</span><br></pre></td></tr></table></figure></p>
+<p>通过以上命令，会生成android-aarch64，android-armv7两个目录，可以将生成的standalone
+toolchain拷贝至固定目录</p>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">sudo cp -r android-ndk-r14b/build/tools/android-aarch64 /opt</span><br><span class="line">sudo cp -r android-ndk-r14b/build/tools/android-armv7 /opt</span><br></pre></td></tr></table></figure></p>
+<p>以上完成standalone toolchain生成</p></li>
+<li><p>Linux主机编译arm跨平台pure c++程序</p>
+<ol type="1">
+<li>在Linux主机上准备main.cpp源代码文件</li>
+</ol>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#include &lt;iostream&gt;</span></span><br><span class="line"></span><br><span class="line">int <span class="function"><span class="title">main</span></span>() &#123;</span><br><span class="line">		std::cout &lt;&lt; <span class="string">&quot;hello world&quot;</span> &lt;&lt; <span class="string">std::endl;</span></span><br><span class="line"><span class="string">    return 0;</span></span><br><span class="line"><span class="string">&#125;</span></span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>编写CMakeLists.txt文件</li>
+</ol>
+<p><figure class="highlight makefile"><table><tr><td class="code"><pre><span class="line">cmake_minimum_required(VERSION 3.17)</span><br><span class="line"></span><br><span class="line">project(ARM)</span><br><span class="line"></span><br><span class="line">enable_language(ASM)</span><br><span class="line"></span><br><span class="line">set(CMAKE_CXX_STANDARD 11)</span><br><span class="line">set(CMAKE_CXX_STANDARD_REQUIRED ON)</span><br><span class="line">add_definitions(-w)</span><br><span class="line">SET(CMAKE_BUILD_TYPE <span class="string">&quot;Debug&quot;</span>)</span><br><span class="line">SET(CMAKE_CXX_FLAGS_DEBUG <span class="string">&quot;$ENV&#123;CXXFLAGS&#125; -O0 -Wall -g2 -ggdb&quot;</span>)</span><br><span class="line">SET(CMAKE_CXX_FLAGS_RELEASE <span class="string">&quot;$ENV&#123;CXXFLAGS&#125; -O3 -Wall&quot;</span>)</span><br><span class="line"></span><br><span class="line">set(TARGET_CPU aarch64)</span><br><span class="line"></span><br><span class="line">set(CMAKE_CXX_FLAGS <span class="string">&quot;$&#123;CMAKE_CXX_FLAGS&#125; -static -fPIE -flax-vector-conversions&quot;</span>)</span><br><span class="line">if(TARGET_CPU STREQUAL <span class="string">&quot;aarch64&quot;</span>)</span><br><span class="line">    include_directories(/opt/android-ndk-r14b/android-aarch64/lib64/clang/7.0.2/<span class="keyword">include</span>)</span><br><span class="line"><span class="keyword">else</span>()</span><br><span class="line">    set(CMAKE_CXX_FLAGS <span class="string">&quot;$&#123;CMAKE_CXX_FLAGS&#125; -mfloat-abi=softfp -mfpu=neon&quot;</span>)</span><br><span class="line">    include_directories(/opt/android-ndk-r14b/android-armv7/lib64/clang/7.0.2/<span class="keyword">include</span>)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line">set(SOURCES</span><br><span class="line">    main.cpp</span><br><span class="line">    <span class="comment"># main.s</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">add_executable(main $&#123;SOURCES&#125;)</span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>编译ARM平台可执行文件</li>
+</ol>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">CXX_COMPILER=/opt/android-ndk-r14b/android-aarch64/bin/aarch64-linux-android-g++</span><br><span class="line">CC_COMPILER=/opt/android-ndk-r14b/android-aarch64/bin/aarch64-linux-android-gcc</span><br><span class="line"><span class="built_in">cd</span> cmake-build-debug</span><br><span class="line">cmake .. -DCMAKE_C_COMPILER=<span class="variable">$CC_COMPILER</span> -DCMAKE_CXX_COMPILER=<span class="variable">$CXX_COMPILER</span></span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>ARM平台程序的执行</li>
+</ol>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb push main /data/<span class="built_in">local</span>/tmp</span><br><span class="line">adb shell ./data/<span class="built_in">local</span>/tmp/main</span><br></pre></td></tr></table></figure></p></li>
+<li><p>GDB+GDBServer调试</p>
+<ol type="1">
+<li>准备GDBServer</li>
+</ol>
+<p>测试手机一般出厂不会自带gdbserver，可以将NDK工具包中对应平台gdbserver推入手机</p>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb push android-ndk-r14b/prebuilt/android-arm64/gdbserver/gdbserver /data/<span class="built_in">local</span>/tmp</span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>启动GDBServer</li>
+</ol>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb shell <span class="comment"># 进入手机shell命令行</span></span><br><span class="line"><span class="built_in">cd</span> /data/<span class="built_in">local</span>/tmp</span><br><span class="line">./gdbserver tcp:9090 main</span><br><span class="line"></span><br><span class="line"><span class="comment"># 正常输出如下：</span></span><br><span class="line">Process main created; pid = 7201</span><br><span class="line">gdbserver: Unable to determine the number of hardware watchpoints available.</span><br><span class="line">gdbserver: Unable to determine the number of hardware breakpoints available.</span><br><span class="line">Listening on port 9090</span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>在主机平台启动gdb调试程序</li>
+</ol>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="built_in">cd</span> android-ndk-r14b/prebuilt/linux-x86_64/bin <span class="comment"># 进入ndk gdb程序目录</span></span><br><span class="line">adb forward tcp:9090 tcp:9090 <span class="comment"># 端口转发</span></span><br><span class="line">./gdb <span class="comment"># 进入gdb程序</span></span><br><span class="line">target remote localhost:9090 <span class="comment"># 开始获取信息并开始调试</span></span><br><span class="line">b main <span class="comment"># 设置断点</span></span><br><span class="line"><span class="comment"># 后续与普通GDB调试相同</span></span><br></pre></td></tr></table></figure></p>
+<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">n  <span class="comment"># 下一步，不进入函数内部</span></span><br><span class="line">s  <span class="comment"># 下一步，进入函数内部</span></span><br><span class="line">l  <span class="comment"># 代码列表</span></span><br><span class="line">info r    <span class="comment"># 查看寄存器</span></span><br></pre></td></tr></table></figure></p></li>
+</ul>
+]]></content>
+      <tags>
+        <tag>Android</tag>
+        <tag>Toolchain</tag>
+        <tag>GDB</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>ARM常用指令(3)</title>
     <url>/2022/07/27/ARM%E5%B8%B8%E7%94%A8%E6%8C%87%E4%BB%A4-3/</url>
     <content><![CDATA[<meta name="referrer" content="no-referrer" />
@@ -377,6 +436,45 @@ STLR
       </tags>
   </entry>
   <entry>
+    <title>C++ Tips</title>
+    <url>/2022/03/05/C-Tips/</url>
+    <content><![CDATA[<ol type="1">
+<li>自定义class，存在析构函数，那么需要同时定义或者删除拷贝构造函数和拷贝赋值函数。原因是，在拷贝构造或者拷贝复制的过程中，为浅拷贝，当程序结束，析构函数介入时，可能存在析构两次的情况。</li>
+</ol>
+<span id="more"></span>
+<ol start="2" type="1">
+<li><p>右值，int &amp;&amp;可以自动转换为int const &amp;。</p></li>
+<li><p>__restrict关键字，告诉编译器，指针不存在重叠的情况，编译器可以进行优化，所有的非const指针都可以加上__restrict关键字，如：int
+* __restrict a。对于vector容器，__restrict关键字不生效，可以尝试#pragma
+omp simd或者#pragma GCC ivdep</p></li>
+<li><p>关于malloc和new</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> *a = <span class="keyword">new</span> <span class="keyword">int</span>[<span class="number">102400</span>];</span><br><span class="line"></span><br><span class="line"><span class="keyword">int</span> *a = (<span class="keyword">int</span> *)<span class="built_in">malloc</span>(<span class="number">102400</span> * <span class="built_in"><span class="keyword">sizeof</span></span>(<span class="keyword">int</span>));</span><br></pre></td></tr></table></figure></p>
+<p>以上申请内存的两种语句，在实际生产环境，执行时并不会真正的分配内存，而是将这一段内存标记为不可用，即：invalid。待需要用到a数组：赋值或者其他操作时，会触发缺页中断，page
+fault。此时进入内核，查询此段内存是否之前malloc过，如果查询到，那么内存标记为可用，此时程序正常运行，如果未查询到malloc记录，那么触发段错误，segmentation
+fault。</p>
+<p>以上两种申请内存的语句，不会进行置零操作，初始化数组时，内存被写入，此时操作系统才进行实际的内存分配，因此测试两次内存赋值操作会发现时间不同。对于new操作符有一个简便方法</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> *a = <span class="keyword">new</span> <span class="keyword">int</span>[<span class="number">102400</span>]&#123;&#125;;</span><br></pre></td></tr></table></figure></p>
+<p>常见的自定义String类中，无参数构造函数也可以进行以下简单的定义：注意new
+char[1]后面的一对大括号</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">String::<span class="built_in">String</span>() : m_length&#123;<span class="number">0</span>&#125;, m_string&#123;<span class="keyword">new</span> <span class="keyword">char</span>[<span class="number">1</span>]&#123;&#125;&#125;&#123;&#125;</span><br></pre></td></tr></table></figure></p></li>
+<li><p>原子操作</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">type __sync_fetch_and_add (type *ptr, type value, ...) <span class="comment">// 将value加到*ptr上，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_sub (type *ptr, type value, ...) <span class="comment">// 从*ptr减去value，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_or (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相或，结果更新到*ptr， 并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_and (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相与，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_xor (type *ptr, type value, ...) <span class="comment">// 将*ptr与value异或，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_nand (type *ptr, type value, ...) <span class="comment">// 将*ptr取反后，与value相与，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_add_and_fetch (type *ptr, type value, ...) <span class="comment">// 将value加到*ptr上，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_sub_and_fetch (type *ptr, type value, ...) <span class="comment">// 从*ptr减去value，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_or_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相或， 结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_and_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相与，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_xor_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value异或，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_nand_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr取反后，与value相与，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line"><span class="keyword">bool</span> __sync_bool_compare_and_swap (type *ptr, type oldval type newval, ...) <span class="comment">// 比较*ptr与oldval的值，如果两者相等，则将newval更新到*ptr并返回true</span></span><br><span class="line">type __sync_val_compare_and_swap (type *ptr, type oldval type newval, ...) <span class="comment">// 比较*ptr与oldval的值，如果两者相等，则将newval更新到*ptr并返回操作之前*ptr的值</span></span><br><span class="line">__sync_synchronize (...) <span class="comment">// 发出完整内存栅栏，内存屏障</span></span><br><span class="line">type __sync_lock_test_and_set (type *ptr, type value, ...) <span class="comment">// 将value写入*ptr，对*ptr加锁，并返回操作之前*ptr的值</span></span><br><span class="line"><span class="keyword">void</span> __sync_lock_release (type *ptr, ...) <span class="comment">// 将0写入到*ptr，（类似对*ptr解锁）</span></span><br></pre></td></tr></table></figure></p>
+<p>c++11中atomic</p>
+<ol type="1">
+<li>atomic_flag</li>
+</ol>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">std::atomic_flag LOCK = ATOMIC_FLAG_INIT; <span class="comment">// 原子布尔类型</span></span><br><span class="line">LOCK.<span class="built_in">test_and_set</span>(); <span class="comment">//被设置，则返回true; 否则，返回false</span></span><br><span class="line">LOCK.<span class="built_in">clear</span>(); <span class="comment">// 清除atomic_flag对象</span></span><br></pre></td></tr></table></figure></p>
+<ol type="1">
+<li>atomic对int, char, bool等数据结构进行原子性封装</li>
+</ol>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function">std::atomic&lt;<span class="keyword">int</span>&gt; <span class="title">counter</span><span class="params">(<span class="number">2</span>)</span></span>; <span class="comment">// 等同于counter.load(2);</span></span><br><span class="line"><span class="keyword">int</span> old = counter.<span class="built_in">fetch_add</span>(<span class="number">2</span>); <span class="comment">// 等同于counter+=2; 注意：counter = counter + 1;并不是原子操作; fetch_add会返回旧值</span></span><br><span class="line">counter.<span class="built_in">load</span>(); <span class="comment">// 读取，等同于std::cout &lt;&lt; counter &lt;&lt; std::endl;</span></span><br><span class="line"><span class="keyword">int</span> old = counter.<span class="built_in">exchange</span>(<span class="number">3</span>); <span class="comment">// 交换并返回旧值，old = 2</span></span><br><span class="line"><span class="keyword">bool</span> equal = counter.<span class="built_in">compare_exchange_strong</span>(old, <span class="keyword">new</span>); <span class="comment">// equal with old, counter = new, 返回true, 此处的old为引用，不能直接传入右值2</span></span><br></pre></td></tr></table></figure></p></li>
+</ol>
+]]></content>
+      <tags>
+        <tag>C++</tag>
+      </tags>
+  </entry>
+  <entry>
     <title>ARM常用指令(1)</title>
     <url>/2022/05/12/ARM%E5%B8%B8%E7%94%A8%E6%8C%87%E4%BB%A4/</url>
     <content><![CDATA[<meta name="referrer" content="no-referrer" />
@@ -508,101 +606,152 @@ test.o对main.o进行反汇编</p>
       </tags>
   </entry>
   <entry>
-    <title>C++ Tips</title>
-    <url>/2022/03/05/C-Tips/</url>
-    <content><![CDATA[<ol type="1">
-<li>自定义class，存在析构函数，那么需要同时定义或者删除拷贝构造函数和拷贝赋值函数。原因是，在拷贝构造或者拷贝复制的过程中，为浅拷贝，当程序结束，析构函数介入时，可能存在析构两次的情况。</li>
-</ol>
-<span id="more"></span>
-<ol start="2" type="1">
-<li><p>右值，int &amp;&amp;可以自动转换为int const &amp;。</p></li>
-<li><p>__restrict关键字，告诉编译器，指针不存在重叠的情况，编译器可以进行优化，所有的非const指针都可以加上__restrict关键字，如：int
-* __restrict a。对于vector容器，__restrict关键字不生效，可以尝试#pragma
-omp simd或者#pragma GCC ivdep</p></li>
-<li><p>关于malloc和new</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> *a = <span class="keyword">new</span> <span class="keyword">int</span>[<span class="number">102400</span>];</span><br><span class="line"></span><br><span class="line"><span class="keyword">int</span> *a = (<span class="keyword">int</span> *)<span class="built_in">malloc</span>(<span class="number">102400</span> * <span class="built_in"><span class="keyword">sizeof</span></span>(<span class="keyword">int</span>));</span><br></pre></td></tr></table></figure></p>
-<p>以上申请内存的两种语句，在实际生产环境，执行时并不会真正的分配内存，而是将这一段内存标记为不可用，即：invalid。待需要用到a数组：赋值或者其他操作时，会触发缺页中断，page
-fault。此时进入内核，查询此段内存是否之前malloc过，如果查询到，那么内存标记为可用，此时程序正常运行，如果未查询到malloc记录，那么触发段错误，segmentation
-fault。</p>
-<p>以上两种申请内存的语句，不会进行置零操作，初始化数组时，内存被写入，此时操作系统才进行实际的内存分配，因此测试两次内存赋值操作会发现时间不同。对于new操作符有一个简便方法</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> *a = <span class="keyword">new</span> <span class="keyword">int</span>[<span class="number">102400</span>]&#123;&#125;;</span><br></pre></td></tr></table></figure></p>
-<p>常见的自定义String类中，无参数构造函数也可以进行以下简单的定义：注意new
-char[1]后面的一对大括号</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">String::<span class="built_in">String</span>() : m_length&#123;<span class="number">0</span>&#125;, m_string&#123;<span class="keyword">new</span> <span class="keyword">char</span>[<span class="number">1</span>]&#123;&#125;&#125;&#123;&#125;</span><br></pre></td></tr></table></figure></p></li>
-<li><p>原子操作</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">type __sync_fetch_and_add (type *ptr, type value, ...) <span class="comment">// 将value加到*ptr上，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_sub (type *ptr, type value, ...) <span class="comment">// 从*ptr减去value，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_or (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相或，结果更新到*ptr， 并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_and (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相与，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_xor (type *ptr, type value, ...) <span class="comment">// 将*ptr与value异或，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_fetch_and_nand (type *ptr, type value, ...) <span class="comment">// 将*ptr取反后，与value相与，结果更新到*ptr，并返回操作之前*ptr的值</span></span><br><span class="line">type __sync_add_and_fetch (type *ptr, type value, ...) <span class="comment">// 将value加到*ptr上，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_sub_and_fetch (type *ptr, type value, ...) <span class="comment">// 从*ptr减去value，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_or_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相或， 结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_and_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value相与，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_xor_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr与value异或，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line">type __sync_nand_and_fetch (type *ptr, type value, ...) <span class="comment">// 将*ptr取反后，与value相与，结果更新到*ptr，并返回操作之后新*ptr的值</span></span><br><span class="line"><span class="keyword">bool</span> __sync_bool_compare_and_swap (type *ptr, type oldval type newval, ...) <span class="comment">// 比较*ptr与oldval的值，如果两者相等，则将newval更新到*ptr并返回true</span></span><br><span class="line">type __sync_val_compare_and_swap (type *ptr, type oldval type newval, ...) <span class="comment">// 比较*ptr与oldval的值，如果两者相等，则将newval更新到*ptr并返回操作之前*ptr的值</span></span><br><span class="line">__sync_synchronize (...) <span class="comment">// 发出完整内存栅栏，内存屏障</span></span><br><span class="line">type __sync_lock_test_and_set (type *ptr, type value, ...) <span class="comment">// 将value写入*ptr，对*ptr加锁，并返回操作之前*ptr的值</span></span><br><span class="line"><span class="keyword">void</span> __sync_lock_release (type *ptr, ...) <span class="comment">// 将0写入到*ptr，（类似对*ptr解锁）</span></span><br></pre></td></tr></table></figure></p>
-<p>c++11中atomic</p>
-<ol type="1">
-<li>atomic_flag</li>
-</ol>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">std::atomic_flag LOCK = ATOMIC_FLAG_INIT; <span class="comment">// 原子布尔类型</span></span><br><span class="line">LOCK.<span class="built_in">test_and_set</span>(); <span class="comment">//被设置，则返回true; 否则，返回false</span></span><br><span class="line">LOCK.<span class="built_in">clear</span>(); <span class="comment">// 清除atomic_flag对象</span></span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>atomic对int, char, bool等数据结构进行原子性封装</li>
-</ol>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function">std::atomic&lt;<span class="keyword">int</span>&gt; <span class="title">counter</span><span class="params">(<span class="number">2</span>)</span></span>; <span class="comment">// 等同于counter.load(2);</span></span><br><span class="line"><span class="keyword">int</span> old = counter.<span class="built_in">fetch_add</span>(<span class="number">2</span>); <span class="comment">// 等同于counter+=2; 注意：counter = counter + 1;并不是原子操作; fetch_add会返回旧值</span></span><br><span class="line">counter.<span class="built_in">load</span>(); <span class="comment">// 读取，等同于std::cout &lt;&lt; counter &lt;&lt; std::endl;</span></span><br><span class="line"><span class="keyword">int</span> old = counter.<span class="built_in">exchange</span>(<span class="number">3</span>); <span class="comment">// 交换并返回旧值，old = 2</span></span><br><span class="line"><span class="keyword">bool</span> equal = counter.<span class="built_in">compare_exchange_strong</span>(old, <span class="keyword">new</span>); <span class="comment">// equal with old, counter = new, 返回true, 此处的old为引用，不能直接传入右值2</span></span><br></pre></td></tr></table></figure></p></li>
-</ol>
-]]></content>
+    <title>ISP尝试解决高Gain下暗部发紫问题</title>
+    <url>/2022/09/23/ISP%E5%B0%9D%E8%AF%95%E8%A7%A3%E5%86%B3%E9%AB%98Gain%E4%B8%8B%E6%9A%97%E9%83%A8%E5%8F%91%E7%B4%AB%E9%97%AE%E9%A2%98/</url>
+    <content><![CDATA[<div class="hbe hbe-container" id="hexo-blog-encrypt" data-wpm="Oh, this is an invalid password. Check and try again, please." data-whm="OOPS, these decrypted content may changed, but you can still have a look.">
+  <script id="hbeData" type="hbeData" data-hmacdigest="1cea3fbca16f260f3098fbb0b2633877df2c31239822c03f9ed6045e0137cbb5">68036766acfc1da8ae32adcb6da431294e97773dc586559ee7dc9dd6f0903db2a9b0a7964b9dbfdca1574eb71ef8681c2da495c23549c72cf0470a97f7dac7aff47ed59f9d106d79b9a2b1b6093a250e383affd1f30d01f4566d3baf2d761d8eacb34d9b4763d9852408de251209ca1c896d7d5c00ad01b1d03abdbe5c2f80dfa68708c24a17af06e70cf87291f269612d59d94fe4cde2acd8f1f77b21e850d4973274810035820de743ebe08ad452824367b50863c4806824befe8c656fdbbc19c542b33a1d9ccfc14bc93b535bb6f8697e1e239d520d27122a683e9971b18b299cd0a8668af4f6bce2f5b9e691f37d254ba743028b1799ad726ab2e4b4066c3792136c481b437eb75c098e4ffa1e85d2d0e0d9a8c2e9bc90e22545593da91efabc980dd33a9fd4286e1e2529c01e296cfe2caab94effc901d064bb22eb1b395b7f14115c695e14315aca1a098f05d16232439c1027184d2fed0a4a96f635c9ba79cb9f71686577d7ed2935162e9b8979f59e0dbfebbc485de9ba7089b1a6089cc04a3ec3bb7bf239423198af3ee74050e4407e12b4b989c61c14027a9ce537fa490e45c4cb28d67ff06b695c473db5bde698c785304140a3a5a1af3d96fa888f7f2bc884446bb9fb4f1c648f81ca0fba8a7125029c6968c944b7533d69efcc7791499f0fc105b18a35653dfd4b573518c98666d1660de6fd228e2f0616e614b490b901d6d2597978b9fe065b98ded1c0398e106cad6af91334571257d97f0e9eb55970f6779012db9ab22192f814dab112cce62a960fe881c4a887b5cf59a62dccaff6606056256a70ae22e001cbf8b40080fa826ae0e4d36c09ede258e534584365bfaeffaa1ceb5c6004a453bdb510b2ef3fc9395db63d2c0b0c39dea70347a8103f87ad1b1d7f4b11bf2c7e99e8a327ab24eaca01917de785370bc9a3feab55d62ffbd07e38b42e261798bdabf9f1b094074a537f9f8a4a8049d5b321034f96bf450f5b0405d1b581d6b6b881bc2c681602d1298463839e5859415cea187c1c68506588e1c5d81aab4c8cab7e3322b64d072b46513e51a52d348c6568665b6b39828ec977db15b5bacfec45afc64162483bfb79c2a9d5f4a62fe5d41703a6e1f8c3851ddbcf2ee753ec96b2192129c96d818c8e7e3d7ea124eb80fb7b19e7acb4754a6111f68850233277a94ad25750b527cb57ef16c1302318fd61482a47f4617012e1e815165804a726375e4c5758ffa59d22ccaa4d54c4922b1a69bf9c85af6efe6bf48e606773be5c2f3a7ecb8856e9bfe06c0dfa2c09c0208bec3c7de12b5ddbbc96f9312a19343dd89fd40409d06448b92eae45b02eb0f76f2726d31a42cc94b035383f20267d0873ce8803dc1c5818485e967ecc35b2d68ae53a9ce3d0d30d0244056e166b4b50aa6b2779bb0d34e91df7505c6f6fa3701462b84d527d9c938dc00f70845fb782e828faef7128ad100bb1bb89844f3f6c3ce99b44444dce5182d510b7139a885831ccfd15d1ed0481b1a05a4370e8902020e578bebebc2e600a81bd414660962d1bed5ee4eab11f5c13d72ae0c4b8c4685a4edcc0d2256248fd01c64a709694c64e5a025f30dee0753c426569e5b6d42249578a0c01e8fddce6a65102e9d3566523140e53923635d23bc53fdb54a1e0132faa1aa568ae92ebd34f131f95b28278cddf7934d06535e37939b18a1d1bdfe69dfcc5e8ce864457e04de59bc0affcc44f6d69ef26700a44d63f01dfdd5fb10af955ccb8df2fb1aa3bbb5ce14750e2808ffd2cb1bbf9cccf8d50dbbd7f595ee0734a9e6781fe60e8a9d66297fdbfb2123c79b964c68600686ddce84c4cf5dc235ec14aa28feb1ded0f4d23a8cdf76ee94192c77d06092ab9735f7686beb3fb6e1f1ef82354e91536b669c06ae14b2a6075f1981b807102c4523fb8999947700e435e68d1394834dbca671e8eab9e29dd2d631f2c5562f8712de2547a0c79c3e66442b71adc8ebbe193386a134dd72f725658ac107bd20fc7927224ea4778e2a317506ce5cafb29fd5e7e98bce7be33db35a3ddb1166f15892010627a13e682c299322e2f188dc2920a1050ec4ab05b67d67dbece89955be28a84badf1d2a1cc56e0abb3cf4c60f6e0d5c83615972c7220098d48112a32aacd6ba7dd59a7c275cc7ebb6069e1bfd3273f99397e903e5b948a4016048d27fc95a6f6d8214d4d7ee26b7a11c392d1a1f80f6d5ac713e5ddd936118d3ebc9cd22c2e31a32cfda723039651bda0510c7f75abf6cd0a0bc7ab93d663d2fde0041eafc775e8c34a8c8ec116414508858bc8abf91d739ae03892c6924175379e7c3dfb9c33cbcacf69a979db0d7b5125505ca23002d6b8990231c6e836beb9a2325d0b017d32d84e0e9b15d093cdc971d9eb8576f90841b182d0f81d21c3b8977c387742c6d7642141da565967eb213eece41a221521a6e1e34d3b161514752d87402908eec1d1ed1fbfeae1c0c4c2fca1cadb15bf9159056396ed33dddb14225c57a4df30ab1354c1bb7e2315dbf13460e5a38f3ba5eca8b7d3fe5d63964ae2679c1ed11420e389055e0b380d34e3e7d9722cd3688d46b7111004b52236d2c18bdfafa9734d31b76ffc089746484d82c9e8dc64b7d0a0d66d1f12205852cd6f77cd93074fea16299b879ebc44c0c0db8952acf6b0a438bf0a5fb5e168e836eafc79da3b1d302d73b7ad5377e8d0aee89ce6849b0a465bea2684b7539ca7e55ba0792852b8714331d2f84126ba3480e3c4f952ba09cb8db2150205e478102fede147eeb675462ec92b0d3f9a9e510edd11e74fa9bd97b3e492eb99696009aa5e5a3870e703a5f7e2382fd8721850d7ca29f62e5ff4463f0dc0365e0051e9239c90b80eb1034b4be7fba20ab0ccc22613f182d47d9c512015c2bdeb0c501dcdf7b0edff7a60df208ed459968970e3f37d808db9bf20e763171a75215007e02c5a74d1494ec0a5e12017cfafec1421bc15605511b438ec5a02010b81fba1e075b163bdfa99bf50d3bda96aba5c4f31f4a3ffb5437bcb7975cb3a873c14d8eca2c1d326ea0cf54ef7c4d33e1a66b2110e7f468051d3d4be5ee0496294f44f2a0f92375ab1639c96df715ccbcd95b7a87ba05f4bc152e9d628342c66f2a2cb32af3a2ba55d3150407332ce6577675fa5d54f03b07fedd13f6f4d9a0e77e64788a09109c60303664176991cca1ed41af7779db7be64f380058257f34926b575b3a65fa79b417f3a5052b63572bdabc42655db6dc6a212c0e2bf6355a1833e638d417a78f9f2626a64d898419a3383c663bd3e808de1533af2f74009acff3e2cc12cbbe599836de2b68d84c21c0abe35040b3efe4033cf797e8698a818d0f9ca4f65068d39e012b003f3b3eb321adbffa74f33916bfddd7232a43021e1697604e9661062d54d2d804c04c24f53fef7da54b51b9e1fc79214663d618f43268b9cae7d0abaa287e36d5f4cc9a9d871880f6e3f2bc1a3a6f21aa97e82bb9c0f75f8205f99ab48ea211aab47440c22c9e0934f7408a40175e757aff134318e594f2538a3b94c71ae594341cd1c3d6b09203bcd746b014fc443f45d566bcf55826042184d165de9f13c2d07a482ecc27512ae84e6b86c063700a66976ec7511899c3eac3755bf900bfacd14e633a45bfefbe73c425c5a16cd5898ac525adc277e24d111e918e40d44443e7a66c3a6623303adeb639a36f2a8be2a07e6a572f0a89442f795bd4457d270d58caaf7c18df410dcb78a0d0d578a0bce40121b42bc35b7329eb345922c356597cc6d7ba96953e615f0fa4b18e0c3b1deb1f5e63134e0f0a03f98ec311c73d38c42b29598819d6efc46817f7de4975a709a1c85c6728bf4ae873c32e38e11e606cedfe0ddb89ed82bc850aba61579624c943aefcb3e1fdf64ae526ede484e8a7483d21e159c361f4220ac82a676483780bd38ed69296950c1c632048732eda3571d66869321243426db2102e88cedc2d04df1e44a3c19521f73423970aff2395a532c675defac243a696ac1562afa4b5d5001ea903721e94744782839f00f9aa4c46891e33a622f15ca17961235b285bfe1b16647ce8b2cd696fd88d868787793a9bf4bda0c1ca12484c338d7201bd7bea47c321cb524ca3f3000d3ebe8cee32d36c6101f667232f0219745319a7b7eda6982479f4e5e05a39b454858fe905cf36af10ab9fc37ec95e6d7405389e7adc90fb2040a5d0795651569ff874c29bc03bed9267c2b31c49e0925a7ee80d1a20942c39ac86b0b213c77e9c537e5413470058e742c824bfaed657fcddf376aea292bb5bbfd6a9fa446de604dab6b121938283bb9ec304cab889be25bb04ba0e7a243496f836cb04a2b3ee9b133b4f6dfdfa4509feb4751c0a8c3c51c5a2728e04fdad19d4b9713658cc1fc98aa90a6a9376cfd1313429fa84835f7b181c3a91e7530ff4c5c4a2b35e4b06cc88766ff617609bfcd5bb68945608a367030eab8b63b2953d61afa79fd7634d66f39d4aadf7527fcdba4277023f92d037e360dcc426210d47643d85b1c86e6c23da2ec13485dc6044bde11d6d8e5a700a25f0063675aa8ca8f6d393365a93ca6d50fa5a811df69318d321d786a41c44add546bfdb35a1970f49ddbf9139c514a46f9bb4aed9ab90fca1b8584a438eea2541dc64064427cd076c147f3049fe19f4bd2bcda9ce04296a36f0f65272fd5345808abb2a7c069e99c261b067f74bdb9e3f613895b8497a42eabd8bce438d6f851636593e1c9df17f0f7dc8bdded5c9a74fcc0dce505d59c2c8d53ecd1309acac118e5b0ec01ec63a7f6adfaddf78f2279847885de7d78869e345ac28852d703ab0aedd9d96896db08618c2ef9b48e088b179ac4bb6adcaac78eb59c06ad7b64623d4c712f322e668cfd1faf14a93e9321aeda819d9577a8f80cb1a536a95376c62092dda0ec55e08bd41a0d64573a6141eadc130c36da4e8978c4af41d13569e11756b83a54f9f6625a2d9890cf289c4c40436093b148613bd72d484a2cd666f2d9f950ad295da0fed0548bc33f5ca3abeb8b36a667961f5b1e94b1411109aa8cd775a9928de520bf09b17a7204d4275ba1e3afae40a64ccec408ed8048f6571b9dde21b17b8842fae21d6cde4c70a73d717b984d538e5fea05e47b63747608ccc7c00a923f3daf324aa08103229837e107759a82edb3ac8501d6ce3e07982c8b0e2f25f627f968581a1c96781e58ab4a56bc2a09e9aa14019fade3609ebe7034941c4fa2afb893e13544d9aeba863836a96707ce0240093c3b47d8487ca82081c65542000e4c1f8e3eebf445962d65749db4a9fd2dd02fb197db3daae3708576d0e203179c7c6efe3393fd7b041bbb27701c31a03354092047bf5df5208cbe1f3607743f828dd2d24e21361c99ffe981d7a8dfd2a3c6af69c4f89be7c11e00d22d103f96c76a63574c27b8195f6841617b1b46af6db3a63853372a6a705a9437d894d285207b52e4e5fdf36dd90a317faee7566b28c9eab40c9348ab76c8614c21718c2bf7ae1a814d2f5246936ae50814fd78fa1306bd0d8bddcef1edaa267ba2a97aaa2ba800047f02364158ae1f8c2a9c7a1f4b7bc69c3a1628f927fd9b20fb34e6bc73b6c7dcba22de887d5ad2cc31588f9fd19d897ad59abe29720be311fc218797a7216cb9ee7a5cceff36efe2a02281d463fd1af26c23f649911795f800d434375e5c17882562ee446771f016c280e1ffb0ab89d5cb28015c7778a31ba9efa78d7e0fbdf613cdb41b4de1aeca42266acf43184a2ba32f7bdba80</script>
+  <div class="hbe hbe-content">
+    <div class="hbe hbe-input hbe-input-default">
+      <input class="hbe hbe-input-field hbe-input-field-default" type="password" id="hbePass">
+      <label class="hbe hbe-input-label hbe-input-label-default" for="hbePass">
+        <span class="hbe hbe-input-label-content hbe-input-label-content-default">Hey, password is required here.</span>
+      </label>
+    </div>
+  </div>
+</div>
+<script data-pjax src="/lib/hbe.js"></script><link href="/css/hbe.style.css" rel="stylesheet" type="text/css">]]></content>
       <tags>
-        <tag>C++</tag>
+        <tag>ISP</tag>
       </tags>
   </entry>
   <entry>
-    <title>Android Toolchain编译与GDB调试</title>
-    <url>/2022/08/26/Android-Toolchain%E7%BC%96%E8%AF%91%E4%B8%8EGDB%E8%B0%83%E8%AF%95/</url>
+    <title>MacOS平台设置定时运行的任务记录</title>
+    <url>/2023/10/20/MacOS%E5%B9%B3%E5%8F%B0%E8%AE%BE%E7%BD%AE%E5%AE%9A%E6%97%B6%E8%BF%90%E8%A1%8C%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%AE%B0%E5%BD%95/</url>
     <content><![CDATA[<meta name="referrer" content="no-referrer" />
-<p>在进行linux主机上进行arm跨平台进行pure c++开发时，可能混有Neon
-intrinsic或者ARM
-assembly代码，此时进行代码编译和调试，可以使用standalone
-toolchain进行编译，使用gdb+gdbserver进行调试。</p>
+<p>最近考虑到iCloud的速度较慢，且偶尔会出现问题时，放弃iCloud，而是转而使用坚果云来进行多台主机之间的数据同步。</p>
 <span id="more"></span>
-<p>首先需要在NDK
-website上下载一个NDK工具包并解压，本人使用的是r14b版本，链接：<a
-href="https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip">https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip</a></p>
+<p>坚果云同步是会遇到一些隐藏文件无法同步的问题,
+但是我也不需要同步这些隐藏文件, 包括恼人的 <code>.DS_Store</code> 文件,
+因此我需要一个定时任务来定期清理这些文件。在 macOS 平台上，传统的
+crontab 命令确实不太实用，因为 macOS 已经采用了 launchd
+作为任务管理器。launchd
+提供了更强大和灵活的方式来管理计划任务，允许你以更直观的方式创建和管理定时任务。</p>
+<p>在 macOS 平台上，使用 <code>launchd</code>
+来设置定时运行的任务。<code>launchd</code>
+是一个系统级的守护程序，用于管理和监控各种系统和用户级任务。以下是如何使用
+<code>launchd</code> 在 macOS 上设置定时运行的任务的步骤：</p>
+<ol type="1">
+<li><p>创建一个属性列表（plist）文件：</p>
+<p>使用文本编辑器创建一个属性列表文件，该文件包含有关你的任务的描述，包括任务的类型、触发器和执行内容。属性列表文件的文件扩展名应为
+<code>.plist</code>。</p>
+<p>你可以使用以下示例属性列表作为参考，并根据你的需求进行修改：</p>
+<figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="meta">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;</span></span><br><span class="line"><span class="meta">&lt;!DOCTYPE <span class="meta-keyword">plist</span> <span class="meta-keyword">PUBLIC</span> <span class="meta-string">&quot;-//Apple//DTD PLIST 1.0//EN&quot;</span> <span class="meta-string">&quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">plist</span> <span class="attr">version</span>=<span class="string">&quot;1.0&quot;</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Label<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>com.vix.cron<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>ProgramArguments<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">array</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>这里存放需要执行的脚本地址<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">array</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Nice<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>1<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>30<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>RunAtLoad<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">true</span> /&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StandardErrorPath<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>/tmp/test.err<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StandardOutPath<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>/tmp/test.out<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">plist</span>&gt;</span></span><br></pre></td></tr></table></figure>
+<p>这个示例会每30秒执行一次脚本文件
+<code>/path/to/your/script.sh</code>。</p>
+<p>我的定时清理 <code>.DS_Store</code> 文件脚本参考如下:</p>
+<figure class="highlight shell"><table><tr><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash">!/bin/bash</span></span><br><span class="line">find ~/Documents -name &quot;.DS_Store&quot; -depth -exec rm -rf &#123;&#125; \;</span><br><span class="line">find ~/Desktop -name &quot;.DS_Store&quot; -depth -exec rm -rf &#123;&#125; \;</span><br></pre></td></tr></table></figure></li>
+<li><p>将 plist 文件保存到适当的位置：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">~/Library/LaunchAgents/</span><br></pre></td></tr></table></figure>
+<p>或</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">/Library/LaunchDaemons/</span><br></pre></td></tr></table></figure>
+<p>如果你想为当前用户设置任务，将 plist 文件保存到
+<code>~/Library/LaunchAgents/</code>；如果你想为系统设置任务，将 plist
+文件保存到 <code>/Library/LaunchDaemons/</code>。</p></li>
+<li><p>加载任务：</p>
+<p>使用以下命令加载你的任务：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl load /path/to/your/plist/file.plist</span><br></pre></td></tr></table></figure>
+<p>如果你将 plist 文件保存到
+<code>~/Library/LaunchAgents/</code>，则使用以下命令：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl load ~/Library/LaunchAgents/yourfile.plist</span><br></pre></td></tr></table></figure>
+<p>如果你将 plist 文件保存到
+<code>/Library/LaunchDaemons/</code>，则使用以下命令：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">sudo launchctl load /Library/LaunchDaemons/yourfile.plist</span><br></pre></td></tr></table></figure></li>
+<li><p>启动或重新启动任务：</p>
+<p>任务会根据属性列表中定义的时间触发。你还可以使用
+<code>launchctl</code> 命令手动启动或重新启动任务：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl start com.example.myjob</span><br></pre></td></tr></table></figure>
+<p>或</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">sudo launchctl start com.example.myjob</span><br></pre></td></tr></table></figure>
+<p>请替换 <code>com.example.myjob</code> 为你的任务的 Label
+值。</p></li>
+<li><p>停止任务：</p>
+<p>你可以使用以下命令停止任务：</p>
+<p><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl unload xxx</span><br></pre></td></tr></table></figure></p></li>
+<li><p>查看任务状态：</p>
+<p>你可以使用以下命令查看任务的状态：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl list | grep com.example.myjob</span><br></pre></td></tr></table></figure>
+<p>请替换 <code>com.example.myjob</code> 为你的任务的 Label 值。</p>
+<p>你还可以使用以下命令查看任务的日志：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">tail -f /tmp/test.out</span><br></pre></td></tr></table></figure>
+<p>请替换 <code>/tmp/test.out</code> 为你的任务的
+<code>StandardOutPath</code> 值。</p></li>
+<li><p>更多的定时任务设置：</p>
+<p><code>launchd</code>
+提供了多种方式来设置更精细的定时任务，可以根据分钟、小时等更加精确的时间间隔来执行任务。以下是一些示例：</p>
 <ul>
-<li><p>Standalone Toolchain的编译</p>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="built_in">cd</span> android-ndk-r14b/build/tools/</span><br><span class="line">./make-standalone-toolchain.sh --platform=android-21 --install-dir=./android-aarch64 --arch=arm64</span><br><span class="line">./make-standalone-toolchain.sh --platform=android-21 --install-dir=./android-armv7 --arch=arm</span><br></pre></td></tr></table></figure></p>
-<p>通过以上命令，会生成android-aarch64，android-armv7两个目录，可以将生成的standalone
-toolchain拷贝至固定目录</p>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">sudo cp -r android-ndk-r14b/build/tools/android-aarch64 /opt</span><br><span class="line">sudo cp -r android-ndk-r14b/build/tools/android-armv7 /opt</span><br></pre></td></tr></table></figure></p>
-<p>以上完成standalone toolchain生成</p></li>
-<li><p>Linux主机编译arm跨平台pure c++程序</p>
-<ol type="1">
-<li>在Linux主机上准备main.cpp源代码文件</li>
-</ol>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="comment">#include &lt;iostream&gt;</span></span><br><span class="line"></span><br><span class="line">int <span class="function"><span class="title">main</span></span>() &#123;</span><br><span class="line">		std::cout &lt;&lt; <span class="string">&quot;hello world&quot;</span> &lt;&lt; <span class="string">std::endl;</span></span><br><span class="line"><span class="string">    return 0;</span></span><br><span class="line"><span class="string">&#125;</span></span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>编写CMakeLists.txt文件</li>
-</ol>
-<p><figure class="highlight makefile"><table><tr><td class="code"><pre><span class="line">cmake_minimum_required(VERSION 3.17)</span><br><span class="line"></span><br><span class="line">project(ARM)</span><br><span class="line"></span><br><span class="line">enable_language(ASM)</span><br><span class="line"></span><br><span class="line">set(CMAKE_CXX_STANDARD 11)</span><br><span class="line">set(CMAKE_CXX_STANDARD_REQUIRED ON)</span><br><span class="line">add_definitions(-w)</span><br><span class="line">SET(CMAKE_BUILD_TYPE <span class="string">&quot;Debug&quot;</span>)</span><br><span class="line">SET(CMAKE_CXX_FLAGS_DEBUG <span class="string">&quot;$ENV&#123;CXXFLAGS&#125; -O0 -Wall -g2 -ggdb&quot;</span>)</span><br><span class="line">SET(CMAKE_CXX_FLAGS_RELEASE <span class="string">&quot;$ENV&#123;CXXFLAGS&#125; -O3 -Wall&quot;</span>)</span><br><span class="line"></span><br><span class="line">set(TARGET_CPU aarch64)</span><br><span class="line"></span><br><span class="line">set(CMAKE_CXX_FLAGS <span class="string">&quot;$&#123;CMAKE_CXX_FLAGS&#125; -static -fPIE -flax-vector-conversions&quot;</span>)</span><br><span class="line">if(TARGET_CPU STREQUAL <span class="string">&quot;aarch64&quot;</span>)</span><br><span class="line">    include_directories(/opt/android-ndk-r14b/android-aarch64/lib64/clang/7.0.2/<span class="keyword">include</span>)</span><br><span class="line"><span class="keyword">else</span>()</span><br><span class="line">    set(CMAKE_CXX_FLAGS <span class="string">&quot;$&#123;CMAKE_CXX_FLAGS&#125; -mfloat-abi=softfp -mfpu=neon&quot;</span>)</span><br><span class="line">    include_directories(/opt/android-ndk-r14b/android-armv7/lib64/clang/7.0.2/<span class="keyword">include</span>)</span><br><span class="line"><span class="keyword">endif</span>()</span><br><span class="line"></span><br><span class="line">set(SOURCES</span><br><span class="line">    main.cpp</span><br><span class="line">    <span class="comment"># main.s</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">add_executable(main $&#123;SOURCES&#125;)</span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>编译ARM平台可执行文件</li>
-</ol>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">CXX_COMPILER=/opt/android-ndk-r14b/android-aarch64/bin/aarch64-linux-android-g++</span><br><span class="line">CC_COMPILER=/opt/android-ndk-r14b/android-aarch64/bin/aarch64-linux-android-gcc</span><br><span class="line"><span class="built_in">cd</span> cmake-build-debug</span><br><span class="line">cmake .. -DCMAKE_C_COMPILER=<span class="variable">$CC_COMPILER</span> -DCMAKE_CXX_COMPILER=<span class="variable">$CXX_COMPILER</span></span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>ARM平台程序的执行</li>
-</ol>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb push main /data/<span class="built_in">local</span>/tmp</span><br><span class="line">adb shell ./data/<span class="built_in">local</span>/tmp/main</span><br></pre></td></tr></table></figure></p></li>
-<li><p>GDB+GDBServer调试</p>
-<ol type="1">
-<li>准备GDBServer</li>
-</ol>
-<p>测试手机一般出厂不会自带gdbserver，可以将NDK工具包中对应平台gdbserver推入手机</p>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb push android-ndk-r14b/prebuilt/android-arm64/gdbserver/gdbserver /data/<span class="built_in">local</span>/tmp</span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>启动GDBServer</li>
-</ol>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">adb shell <span class="comment"># 进入手机shell命令行</span></span><br><span class="line"><span class="built_in">cd</span> /data/<span class="built_in">local</span>/tmp</span><br><span class="line">./gdbserver tcp:9090 main</span><br><span class="line"></span><br><span class="line"><span class="comment"># 正常输出如下：</span></span><br><span class="line">Process main created; pid = 7201</span><br><span class="line">gdbserver: Unable to determine the number of hardware watchpoints available.</span><br><span class="line">gdbserver: Unable to determine the number of hardware breakpoints available.</span><br><span class="line">Listening on port 9090</span><br></pre></td></tr></table></figure></p>
-<ol type="1">
-<li>在主机平台启动gdb调试程序</li>
-</ol>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line"><span class="built_in">cd</span> android-ndk-r14b/prebuilt/linux-x86_64/bin <span class="comment"># 进入ndk gdb程序目录</span></span><br><span class="line">adb forward tcp:9090 tcp:9090 <span class="comment"># 端口转发</span></span><br><span class="line">./gdb <span class="comment"># 进入gdb程序</span></span><br><span class="line">target remote localhost:9090 <span class="comment"># 开始获取信息并开始调试</span></span><br><span class="line">b main <span class="comment"># 设置断点</span></span><br><span class="line"><span class="comment"># 后续与普通GDB调试相同</span></span><br></pre></td></tr></table></figure></p>
-<p><figure class="highlight bash"><table><tr><td class="code"><pre><span class="line">n  <span class="comment"># 下一步，不进入函数内部</span></span><br><span class="line">s  <span class="comment"># 下一步，进入函数内部</span></span><br><span class="line">l  <span class="comment"># 代码列表</span></span><br><span class="line">info r    <span class="comment"># 查看寄存器</span></span><br></pre></td></tr></table></figure></p></li>
+<li><strong>按分钟执行任务</strong>：</li>
 </ul>
+<p>如果你希望定时任务每隔一定的分钟数执行一次，你可以使用
+<code>StartInterval</code> 键来设置间隔。下面是一个示例：</p>
+<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">integer</span>&gt;</span>600<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
+<p>这将使任务每隔 10 分钟执行一次。</p>
+<ul>
+<li><strong>按小时执行任务</strong>：</li>
+</ul>
+<p>如果你希望任务按小时执行，你可以结合使用
+<code>StartCalendarInterval</code> 和
+<code>StartInterval</code>。例如，要在每小时的第 30 分钟执行任务：</p>
+<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>30<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">integer</span>&gt;</span>3600<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
+<p>这将使任务每隔一小时执行一次，并在每小时的第 30 分执行。</p>
+<ul>
+<li><strong>按天执行任务</strong>：</li>
+</ul>
+<p>如果你需要在特定时间执行任务，可以使用
+<code>StartCalendarInterval</code>，如下所示：</p>
+<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Hour<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>8<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>0<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
+<p>这将使任务在每天早上 8 点执行。</p>
+<ul>
+<li><strong>按周执行任务</strong>：</li>
+</ul>
+<p>你可以使用 <code>StartCalendarInterval</code>
+来指定具体的星期几执行任务，例如，每周一早上 8 点：</p>
+<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Hour<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>8<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>0<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Weekday<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>1<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
+<p>这将使任务每周一早上 8 点执行。</p>
+<p>通过合理设置 <code>StartInterval</code> 和
+<code>StartCalendarInterval</code>，你可以创建几乎任何你想要的定时任务规则，以满足不同的需求。请根据你的具体需求修改上述示例来创建自定义的定时任务。</p></li>
+</ol>
+<p>你的任务现在应该会按计划执行。你可以根据需要编辑 plist
+文件来更改触发时间或其他任务设置。</p>
+]]></content>
+  </entry>
+  <entry>
+    <title>CUDA原子操作</title>
+    <url>/2022/08/08/CUDA%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C/</url>
+    <content><![CDATA[<meta name="referrer" content="no-referrer" />
+<ol type="1">
+<li><p>atomicAdd(dst, src)：*dst += src</p></li>
+<li><p>atomicSub(dst, src)：*dst -= src</p></li>
+<li><p>atomicOr(dst, src)：*dst |= src</p></li>
+</ol>
+<span id="more"></span>
+<ol start="4" type="1">
+<li><p>atomicAnd(dst, src)：*dst &amp;= src</p></li>
+<li><p>atomicXor(dst, src)：*dst ^= src</p></li>
+<li><p>atomicMax(dst, src)：<em>dst = std::max(</em>dst, src)</p></li>
+<li><p>atomicMin(dst, src)：<em>dst = std::min(</em>dst, src)</p></li>
+</ol>
+<p>以上原子操作均会返回旧值。</p>
+<ol type="1">
+<li><p>old = atomicExch(dst, src) ：old = <em>dst; </em>dst = src;
+不返回旧值，对标std::atomic的exchange函数</p></li>
+<li><p>atomicCAS：判断是否相等，相等则写入，并读取旧值</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">old = <span class="built_in">atomicCAS</span>(dst, cmp, src)</span><br><span class="line"></span><br><span class="line">Like below:</span><br><span class="line"></span><br><span class="line">old = *dst;</span><br><span class="line"><span class="keyword">if</span> (old == cmp)</span><br><span class="line">  *dst = src;</span><br></pre></td></tr></table></figure></p>
+<p>通过atomicCAS可以实现一些CUDA并未原生提供的原子操作，例如：读-修改-写回，乘</p>
+<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">old = <span class="built_in">atomicCAS</span>(dst, expect, expect + src);</span><br><span class="line"></span><br><span class="line">old = <span class="built_in">atomicCAS</span>(dst, expect, expect * src);</span><br></pre></td></tr></table></figure></p></li>
+</ol>
 ]]></content>
       <tags>
-        <tag>Android</tag>
-        <tag>Toolchain</tag>
-        <tag>GDB</tag>
+        <tag>CUDA</tag>
       </tags>
   </entry>
   <entry>
@@ -690,55 +839,6 @@ E[Y])]\)</span></p>
 ]]></content>
       <tags>
         <tag>图像处理</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>CUDA原子操作</title>
-    <url>/2022/08/08/CUDA%E5%8E%9F%E5%AD%90%E6%93%8D%E4%BD%9C/</url>
-    <content><![CDATA[<meta name="referrer" content="no-referrer" />
-<ol type="1">
-<li><p>atomicAdd(dst, src)：*dst += src</p></li>
-<li><p>atomicSub(dst, src)：*dst -= src</p></li>
-<li><p>atomicOr(dst, src)：*dst |= src</p></li>
-</ol>
-<span id="more"></span>
-<ol start="4" type="1">
-<li><p>atomicAnd(dst, src)：*dst &amp;= src</p></li>
-<li><p>atomicXor(dst, src)：*dst ^= src</p></li>
-<li><p>atomicMax(dst, src)：<em>dst = std::max(</em>dst, src)</p></li>
-<li><p>atomicMin(dst, src)：<em>dst = std::min(</em>dst, src)</p></li>
-</ol>
-<p>以上原子操作均会返回旧值。</p>
-<ol type="1">
-<li><p>old = atomicExch(dst, src) ：old = <em>dst; </em>dst = src;
-不返回旧值，对标std::atomic的exchange函数</p></li>
-<li><p>atomicCAS：判断是否相等，相等则写入，并读取旧值</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">old = <span class="built_in">atomicCAS</span>(dst, cmp, src)</span><br><span class="line"></span><br><span class="line">Like below:</span><br><span class="line"></span><br><span class="line">old = *dst;</span><br><span class="line"><span class="keyword">if</span> (old == cmp)</span><br><span class="line">  *dst = src;</span><br></pre></td></tr></table></figure></p>
-<p>通过atomicCAS可以实现一些CUDA并未原生提供的原子操作，例如：读-修改-写回，乘</p>
-<p><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">old = <span class="built_in">atomicCAS</span>(dst, expect, expect + src);</span><br><span class="line"></span><br><span class="line">old = <span class="built_in">atomicCAS</span>(dst, expect, expect * src);</span><br></pre></td></tr></table></figure></p></li>
-</ol>
-]]></content>
-      <tags>
-        <tag>CUDA</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>ISP尝试解决高Gain下暗部发紫问题</title>
-    <url>/2022/09/23/ISP%E5%B0%9D%E8%AF%95%E8%A7%A3%E5%86%B3%E9%AB%98Gain%E4%B8%8B%E6%9A%97%E9%83%A8%E5%8F%91%E7%B4%AB%E9%97%AE%E9%A2%98/</url>
-    <content><![CDATA[<div class="hbe hbe-container" id="hexo-blog-encrypt" data-wpm="Oh, this is an invalid password. Check and try again, please." data-whm="OOPS, these decrypted content may changed, but you can still have a look.">
-  <script id="hbeData" type="hbeData" data-hmacdigest="1cea3fbca16f260f3098fbb0b2633877df2c31239822c03f9ed6045e0137cbb5">68036766acfc1da8ae32adcb6da431294e97773dc586559ee7dc9dd6f0903db2a9b0a7964b9dbfdca1574eb71ef8681c2da495c23549c72cf0470a97f7dac7aff47ed59f9d106d79b9a2b1b6093a250e383affd1f30d01f4566d3baf2d761d8eacb34d9b4763d9852408de251209ca1c896d7d5c00ad01b1d03abdbe5c2f80dfa68708c24a17af06e70cf87291f269612d59d94fe4cde2acd8f1f77b21e850d4973274810035820de743ebe08ad452824367b50863c4806824befe8c656fdbbc19c542b33a1d9ccfc14bc93b535bb6f8697e1e239d520d27122a683e9971b18b299cd0a8668af4f6bce2f5b9e691f37d254ba743028b1799ad726ab2e4b4066c3792136c481b437eb75c098e4ffa1e85d2d0e0d9a8c2e9bc90e22545593da91efabc980dd33a9fd4286e1e2529c01e296cfe2caab94effc901d064bb22eb1b395b7f14115c695e14315aca1a098f05d16232439c1027184d2fed0a4a96f635c9ba79cb9f71686577d7ed2935162e9b8979f59e0dbfebbc485de9ba7089b1a6089cc04a3ec3bb7bf239423198af3ee74050e4407e12b4b989c61c14027a9ce537fa490e45c4cb28d67ff06b695c473db5bde698c785304140a3a5a1af3d96fa888f7f2bc884446bb9fb4f1c648f81ca0fba8a7125029c6968c944b7533d69efcc7791499f0fc105b18a35653dfd4b573518c98666d1660de6fd228e2f0616e614b490b901d6d2597978b9fe065b98ded1c0398e106cad6af91334571257d97f0e9eb55970f6779012db9ab22192f814dab112cce62a960fe881c4a887b5cf59a62dccaff6606056256a70ae22e001cbf8b40080fa826ae0e4d36c09ede258e534584365bfaeffaa1ceb5c6004a453bdb510b2ef3fc9395db63d2c0b0c39dea70347a8103f87ad1b1d7f4b11bf2c7e99e8a327ab24eaca01917de785370bc9a3feab55d62ffbd07e38b42e261798bdabf9f1b094074a537f9f8a4a8049d5b321034f96bf450f5b0405d1b581d6b6b881bc2c681602d1298463839e5859415cea187c1c68506588e1c5d81aab4c8cab7e3322b64d072b46513e51a52d348c6568665b6b39828ec977db15b5bacfec45afc64162483bfb79c2a9d5f4a62fe5d41703a6e1f8c3851ddbcf2ee753ec96b2192129c96d818c8e7e3d7ea124eb80fb7b19e7acb4754a6111f68850233277a94ad25750b527cb57ef16c1302318fd61482a47f4617012e1e815165804a726375e4c5758ffa59d22ccaa4d54c4922b1a69bf9c85af6efe6bf48e606773be5c2f3a7ecb8856e9bfe06c0dfa2c09c0208bec3c7de12b5ddbbc96f9312a19343dd89fd40409d06448b92eae45b02eb0f76f2726d31a42cc94b035383f20267d0873ce8803dc1c5818485e967ecc35b2d68ae53a9ce3d0d30d0244056e166b4b50aa6b2779bb0d34e91df7505c6f6fa3701462b84d527d9c938dc00f70845fb782e828faef7128ad100bb1bb89844f3f6c3ce99b44444dce5182d510b7139a885831ccfd15d1ed0481b1a05a4370e8902020e578bebebc2e600a81bd414660962d1bed5ee4eab11f5c13d72ae0c4b8c4685a4edcc0d2256248fd01c64a709694c64e5a025f30dee0753c426569e5b6d42249578a0c01e8fddce6a65102e9d3566523140e53923635d23bc53fdb54a1e0132faa1aa568ae92ebd34f131f95b28278cddf7934d06535e37939b18a1d1bdfe69dfcc5e8ce864457e04de59bc0affcc44f6d69ef26700a44d63f01dfdd5fb10af955ccb8df2fb1aa3bbb5ce14750e2808ffd2cb1bbf9cccf8d50dbbd7f595ee0734a9e6781fe60e8a9d66297fdbfb2123c79b964c68600686ddce84c4cf5dc235ec14aa28feb1ded0f4d23a8cdf76ee94192c77d06092ab9735f7686beb3fb6e1f1ef82354e91536b669c06ae14b2a6075f1981b807102c4523fb8999947700e435e68d1394834dbca671e8eab9e29dd2d631f2c5562f8712de2547a0c79c3e66442b71adc8ebbe193386a134dd72f725658ac107bd20fc7927224ea4778e2a317506ce5cafb29fd5e7e98bce7be33db35a3ddb1166f15892010627a13e682c299322e2f188dc2920a1050ec4ab05b67d67dbece89955be28a84badf1d2a1cc56e0abb3cf4c60f6e0d5c83615972c7220098d48112a32aacd6ba7dd59a7c275cc7ebb6069e1bfd3273f99397e903e5b948a4016048d27fc95a6f6d8214d4d7ee26b7a11c392d1a1f80f6d5ac713e5ddd936118d3ebc9cd22c2e31a32cfda723039651bda0510c7f75abf6cd0a0bc7ab93d663d2fde0041eafc775e8c34a8c8ec116414508858bc8abf91d739ae03892c6924175379e7c3dfb9c33cbcacf69a979db0d7b5125505ca23002d6b8990231c6e836beb9a2325d0b017d32d84e0e9b15d093cdc971d9eb8576f90841b182d0f81d21c3b8977c387742c6d7642141da565967eb213eece41a221521a6e1e34d3b161514752d87402908eec1d1ed1fbfeae1c0c4c2fca1cadb15bf9159056396ed33dddb14225c57a4df30ab1354c1bb7e2315dbf13460e5a38f3ba5eca8b7d3fe5d63964ae2679c1ed11420e389055e0b380d34e3e7d9722cd3688d46b7111004b52236d2c18bdfafa9734d31b76ffc089746484d82c9e8dc64b7d0a0d66d1f12205852cd6f77cd93074fea16299b879ebc44c0c0db8952acf6b0a438bf0a5fb5e168e836eafc79da3b1d302d73b7ad5377e8d0aee89ce6849b0a465bea2684b7539ca7e55ba0792852b8714331d2f84126ba3480e3c4f952ba09cb8db2150205e478102fede147eeb675462ec92b0d3f9a9e510edd11e74fa9bd97b3e492eb99696009aa5e5a3870e703a5f7e2382fd8721850d7ca29f62e5ff4463f0dc0365e0051e9239c90b80eb1034b4be7fba20ab0ccc22613f182d47d9c512015c2bdeb0c501dcdf7b0edff7a60df208ed459968970e3f37d808db9bf20e763171a75215007e02c5a74d1494ec0a5e12017cfafec1421bc15605511b438ec5a02010b81fba1e075b163bdfa99bf50d3bda96aba5c4f31f4a3ffb5437bcb7975cb3a873c14d8eca2c1d326ea0cf54ef7c4d33e1a66b2110e7f468051d3d4be5ee0496294f44f2a0f92375ab1639c96df715ccbcd95b7a87ba05f4bc152e9d628342c66f2a2cb32af3a2ba55d3150407332ce6577675fa5d54f03b07fedd13f6f4d9a0e77e64788a09109c60303664176991cca1ed41af7779db7be64f380058257f34926b575b3a65fa79b417f3a5052b63572bdabc42655db6dc6a212c0e2bf6355a1833e638d417a78f9f2626a64d898419a3383c663bd3e808de1533af2f74009acff3e2cc12cbbe599836de2b68d84c21c0abe35040b3efe4033cf797e8698a818d0f9ca4f65068d39e012b003f3b3eb321adbffa74f33916bfddd7232a43021e1697604e9661062d54d2d804c04c24f53fef7da54b51b9e1fc79214663d618f43268b9cae7d0abaa287e36d5f4cc9a9d871880f6e3f2bc1a3a6f21aa97e82bb9c0f75f8205f99ab48ea211aab47440c22c9e0934f7408a40175e757aff134318e594f2538a3b94c71ae594341cd1c3d6b09203bcd746b014fc443f45d566bcf55826042184d165de9f13c2d07a482ecc27512ae84e6b86c063700a66976ec7511899c3eac3755bf900bfacd14e633a45bfefbe73c425c5a16cd5898ac525adc277e24d111e918e40d44443e7a66c3a6623303adeb639a36f2a8be2a07e6a572f0a89442f795bd4457d270d58caaf7c18df410dcb78a0d0d578a0bce40121b42bc35b7329eb345922c356597cc6d7ba96953e615f0fa4b18e0c3b1deb1f5e63134e0f0a03f98ec311c73d38c42b29598819d6efc46817f7de4975a709a1c85c6728bf4ae873c32e38e11e606cedfe0ddb89ed82bc850aba61579624c943aefcb3e1fdf64ae526ede484e8a7483d21e159c361f4220ac82a676483780bd38ed69296950c1c632048732eda3571d66869321243426db2102e88cedc2d04df1e44a3c19521f73423970aff2395a532c675defac243a696ac1562afa4b5d5001ea903721e94744782839f00f9aa4c46891e33a622f15ca17961235b285bfe1b16647ce8b2cd696fd88d868787793a9bf4bda0c1ca12484c338d7201bd7bea47c321cb524ca3f3000d3ebe8cee32d36c6101f667232f0219745319a7b7eda6982479f4e5e05a39b454858fe905cf36af10ab9fc37ec95e6d7405389e7adc90fb2040a5d0795651569ff874c29bc03bed9267c2b31c49e0925a7ee80d1a20942c39ac86b0b213c77e9c537e5413470058e742c824bfaed657fcddf376aea292bb5bbfd6a9fa446de604dab6b121938283bb9ec304cab889be25bb04ba0e7a243496f836cb04a2b3ee9b133b4f6dfdfa4509feb4751c0a8c3c51c5a2728e04fdad19d4b9713658cc1fc98aa90a6a9376cfd1313429fa84835f7b181c3a91e7530ff4c5c4a2b35e4b06cc88766ff617609bfcd5bb68945608a367030eab8b63b2953d61afa79fd7634d66f39d4aadf7527fcdba4277023f92d037e360dcc426210d47643d85b1c86e6c23da2ec13485dc6044bde11d6d8e5a700a25f0063675aa8ca8f6d393365a93ca6d50fa5a811df69318d321d786a41c44add546bfdb35a1970f49ddbf9139c514a46f9bb4aed9ab90fca1b8584a438eea2541dc64064427cd076c147f3049fe19f4bd2bcda9ce04296a36f0f65272fd5345808abb2a7c069e99c261b067f74bdb9e3f613895b8497a42eabd8bce438d6f851636593e1c9df17f0f7dc8bdded5c9a74fcc0dce505d59c2c8d53ecd1309acac118e5b0ec01ec63a7f6adfaddf78f2279847885de7d78869e345ac28852d703ab0aedd9d96896db08618c2ef9b48e088b179ac4bb6adcaac78eb59c06ad7b64623d4c712f322e668cfd1faf14a93e9321aeda819d9577a8f80cb1a536a95376c62092dda0ec55e08bd41a0d64573a6141eadc130c36da4e8978c4af41d13569e11756b83a54f9f6625a2d9890cf289c4c40436093b148613bd72d484a2cd666f2d9f950ad295da0fed0548bc33f5ca3abeb8b36a667961f5b1e94b1411109aa8cd775a9928de520bf09b17a7204d4275ba1e3afae40a64ccec408ed8048f6571b9dde21b17b8842fae21d6cde4c70a73d717b984d538e5fea05e47b63747608ccc7c00a923f3daf324aa08103229837e107759a82edb3ac8501d6ce3e07982c8b0e2f25f627f968581a1c96781e58ab4a56bc2a09e9aa14019fade3609ebe7034941c4fa2afb893e13544d9aeba863836a96707ce0240093c3b47d8487ca82081c65542000e4c1f8e3eebf445962d65749db4a9fd2dd02fb197db3daae3708576d0e203179c7c6efe3393fd7b041bbb27701c31a03354092047bf5df5208cbe1f3607743f828dd2d24e21361c99ffe981d7a8dfd2a3c6af69c4f89be7c11e00d22d103f96c76a63574c27b8195f6841617b1b46af6db3a63853372a6a705a9437d894d285207b52e4e5fdf36dd90a317faee7566b28c9eab40c9348ab76c8614c21718c2bf7ae1a814d2f5246936ae50814fd78fa1306bd0d8bddcef1edaa267ba2a97aaa2ba800047f02364158ae1f8c2a9c7a1f4b7bc69c3a1628f927fd9b20fb34e6bc73b6c7dcba22de887d5ad2cc31588f9fd19d897ad59abe29720be311fc218797a7216cb9ee7a5cceff36efe2a02281d463fd1af26c23f649911795f800d434375e5c17882562ee446771f016c280e1ffb0ab89d5cb28015c7778a31ba9efa78d7e0fbdf613cdb41b4de1aeca42266acf43184a2ba32f7bdba80</script>
-  <div class="hbe hbe-content">
-    <div class="hbe hbe-input hbe-input-default">
-      <input class="hbe hbe-input-field hbe-input-field-default" type="password" id="hbePass">
-      <label class="hbe hbe-input-label hbe-input-label-default" for="hbePass">
-        <span class="hbe hbe-input-label-content hbe-input-label-content-default">Hey, password is required here.</span>
-      </label>
-    </div>
-  </div>
-</div>
-<script data-pjax src="/lib/hbe.js"></script><link href="/css/hbe.style.css" rel="stylesheet" type="text/css">]]></content>
-      <tags>
-        <tag>ISP</tag>
       </tags>
   </entry>
   <entry>
@@ -1256,106 +1356,6 @@ A2 Tensor Core GPU</li>
       </tags>
   </entry>
   <entry>
-    <title>MacOS平台设置定时运行的任务记录</title>
-    <url>/2023/10/20/MacOS%E5%B9%B3%E5%8F%B0%E8%AE%BE%E7%BD%AE%E5%AE%9A%E6%97%B6%E8%BF%90%E8%A1%8C%E7%9A%84%E4%BB%BB%E5%8A%A1%E8%AE%B0%E5%BD%95/</url>
-    <content><![CDATA[<meta name="referrer" content="no-referrer" />
-<p>最近考虑到iCloud的速度较慢，且偶尔会出现问题时，放弃iCloud，而是转而使用坚果云来进行多台主机之间的数据同步。</p>
-<span id="more"></span>
-<p>坚果云同步是会遇到一些隐藏文件无法同步的问题,
-但是我也不需要同步这些隐藏文件, 包括恼人的 <code>.DS_Store</code> 文件,
-因此我需要一个定时任务来定期清理这些文件。在 macOS 平台上，传统的
-crontab 命令确实不太实用，因为 macOS 已经采用了 launchd
-作为任务管理器。launchd
-提供了更强大和灵活的方式来管理计划任务，允许你以更直观的方式创建和管理定时任务。</p>
-<p>在 macOS 平台上，使用 <code>launchd</code>
-来设置定时运行的任务。<code>launchd</code>
-是一个系统级的守护程序，用于管理和监控各种系统和用户级任务。以下是如何使用
-<code>launchd</code> 在 macOS 上设置定时运行的任务的步骤：</p>
-<ol type="1">
-<li><p>创建一个属性列表（plist）文件：</p>
-<p>使用文本编辑器创建一个属性列表文件，该文件包含有关你的任务的描述，包括任务的类型、触发器和执行内容。属性列表文件的文件扩展名应为
-<code>.plist</code>。</p>
-<p>你可以使用以下示例属性列表作为参考，并根据你的需求进行修改：</p>
-<figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="meta">&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;</span></span><br><span class="line"><span class="meta">&lt;!DOCTYPE <span class="meta-keyword">plist</span> <span class="meta-keyword">PUBLIC</span> <span class="meta-string">&quot;-//Apple//DTD PLIST 1.0//EN&quot;</span> <span class="meta-string">&quot;http://www.apple.com/DTDs/PropertyList-1.0.dtd&quot;</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">plist</span> <span class="attr">version</span>=<span class="string">&quot;1.0&quot;</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Label<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>com.vix.cron<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>ProgramArguments<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">array</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>这里存放需要执行的脚本地址<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">array</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Nice<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>1<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>30<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>RunAtLoad<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">true</span> /&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StandardErrorPath<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>/tmp/test.err<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line"></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>StandardOutPath<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">string</span>&gt;</span>/tmp/test.out<span class="tag">&lt;/<span class="name">string</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">plist</span>&gt;</span></span><br></pre></td></tr></table></figure>
-<p>这个示例会每30秒执行一次脚本文件
-<code>/path/to/your/script.sh</code>。</p>
-<p>我的定时清理 <code>.DS_Store</code> 文件脚本参考如下:</p>
-<figure class="highlight shell"><table><tr><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash">!/bin/bash</span></span><br><span class="line">find ~/Documents -name &quot;.DS_Store&quot; -depth -exec rm -rf &#123;&#125; \;</span><br><span class="line">find ~/Desktop -name &quot;.DS_Store&quot; -depth -exec rm -rf &#123;&#125; \;</span><br></pre></td></tr></table></figure></li>
-<li><p>将 plist 文件保存到适当的位置：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">~/Library/LaunchAgents/</span><br></pre></td></tr></table></figure>
-<p>或</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">/Library/LaunchDaemons/</span><br></pre></td></tr></table></figure>
-<p>如果你想为当前用户设置任务，将 plist 文件保存到
-<code>~/Library/LaunchAgents/</code>；如果你想为系统设置任务，将 plist
-文件保存到 <code>/Library/LaunchDaemons/</code>。</p></li>
-<li><p>加载任务：</p>
-<p>使用以下命令加载你的任务：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl load /path/to/your/plist/file.plist</span><br></pre></td></tr></table></figure>
-<p>如果你将 plist 文件保存到
-<code>~/Library/LaunchAgents/</code>，则使用以下命令：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl load ~/Library/LaunchAgents/yourfile.plist</span><br></pre></td></tr></table></figure>
-<p>如果你将 plist 文件保存到
-<code>/Library/LaunchDaemons/</code>，则使用以下命令：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">sudo launchctl load /Library/LaunchDaemons/yourfile.plist</span><br></pre></td></tr></table></figure></li>
-<li><p>启动或重新启动任务：</p>
-<p>任务会根据属性列表中定义的时间触发。你还可以使用
-<code>launchctl</code> 命令手动启动或重新启动任务：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl start com.example.myjob</span><br></pre></td></tr></table></figure>
-<p>或</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">sudo launchctl start com.example.myjob</span><br></pre></td></tr></table></figure>
-<p>请替换 <code>com.example.myjob</code> 为你的任务的 Label
-值。</p></li>
-<li><p>停止任务：</p>
-<p>你可以使用以下命令停止任务：</p>
-<p><figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl unload xxx</span><br></pre></td></tr></table></figure></p></li>
-<li><p>查看任务状态：</p>
-<p>你可以使用以下命令查看任务的状态：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">launchctl list | grep com.example.myjob</span><br></pre></td></tr></table></figure>
-<p>请替换 <code>com.example.myjob</code> 为你的任务的 Label 值。</p>
-<p>你还可以使用以下命令查看任务的日志：</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">tail -f /tmp/test.out</span><br></pre></td></tr></table></figure>
-<p>请替换 <code>/tmp/test.out</code> 为你的任务的
-<code>StandardOutPath</code> 值。</p></li>
-<li><p>更多的定时任务设置：</p>
-<p><code>launchd</code>
-提供了多种方式来设置更精细的定时任务，可以根据分钟、小时等更加精确的时间间隔来执行任务。以下是一些示例：</p>
-<ul>
-<li><strong>按分钟执行任务</strong>：</li>
-</ul>
-<p>如果你希望定时任务每隔一定的分钟数执行一次，你可以使用
-<code>StartInterval</code> 键来设置间隔。下面是一个示例：</p>
-<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">integer</span>&gt;</span>600<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
-<p>这将使任务每隔 10 分钟执行一次。</p>
-<ul>
-<li><strong>按小时执行任务</strong>：</li>
-</ul>
-<p>如果你希望任务按小时执行，你可以结合使用
-<code>StartCalendarInterval</code> 和
-<code>StartInterval</code>。例如，要在每小时的第 30 分钟执行任务：</p>
-<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>30<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">integer</span>&gt;</span>3600<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
-<p>这将使任务每隔一小时执行一次，并在每小时的第 30 分执行。</p>
-<ul>
-<li><strong>按天执行任务</strong>：</li>
-</ul>
-<p>如果你需要在特定时间执行任务，可以使用
-<code>StartCalendarInterval</code>，如下所示：</p>
-<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Hour<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>8<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>0<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
-<p>这将使任务在每天早上 8 点执行。</p>
-<ul>
-<li><strong>按周执行任务</strong>：</li>
-</ul>
-<p>你可以使用 <code>StartCalendarInterval</code>
-来指定具体的星期几执行任务，例如，每周一早上 8 点：</p>
-<p><figure class="highlight xml"><table><tr><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">key</span>&gt;</span>StartCalendarInterval<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">dict</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Hour<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>8<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Minute<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>0<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">key</span>&gt;</span>Weekday<span class="tag">&lt;/<span class="name">key</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">integer</span>&gt;</span>1<span class="tag">&lt;/<span class="name">integer</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dict</span>&gt;</span></span><br></pre></td></tr></table></figure></p>
-<p>这将使任务每周一早上 8 点执行。</p>
-<p>通过合理设置 <code>StartInterval</code> 和
-<code>StartCalendarInterval</code>，你可以创建几乎任何你想要的定时任务规则，以满足不同的需求。请根据你的具体需求修改上述示例来创建自定义的定时任务。</p></li>
-</ol>
-<p>你的任务现在应该会按计划执行。你可以根据需要编辑 plist
-文件来更改触发时间或其他任务设置。</p>
-]]></content>
-  </entry>
-  <entry>
     <title>图像平坦区域检测(Flat Area Detection)</title>
     <url>/2023/10/24/%E5%9B%BE%E5%83%8F%E5%B9%B3%E5%9D%A6%E5%8C%BA%E5%9F%9F%E6%A3%80%E6%B5%8B-Flat-Area-Detection/</url>
     <content><![CDATA[<div class="hbe hbe-container" id="hexo-blog-encrypt" data-wpm="Oh, this is an invalid password. Check and try again, please." data-whm="OOPS, these decrypted content may changed, but you can still have a look.">
@@ -1395,55 +1395,6 @@ crontab 命令确实不太实用，因为 macOS 已经采用了 launchd
         <tag>Deep Learning</tag>
         <tag>Loss</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>探索C++中的Lambda表达式</title>
-    <url>/2023/12/14/%E6%8E%A2%E7%B4%A2C-%E4%B8%AD%E7%9A%84Lambda%E8%A1%A8%E8%BE%BE%E5%BC%8F/</url>
-    <content><![CDATA[<meta name="referrer" content="no-referrer" />
-<p>Lambda 表达式是 C++11
-引入的一个重要特性，它为函数式编程风格提供了更灵活和便利的方法。本文将探讨
-Lambda
-表达式的基础知识、语法结构、使用场景以及与传统函数指针和函数对象的比较。</p>
-<span id="more"></span>
-<h2 id="lambda-表达式的基础知识">Lambda 表达式的基础知识</h2>
-<p>Lambda 表达式的基本语法结构，包括捕获列表、参数列表、可选的 mutable
-修饰符、返回类型和函数体。</p>
-<p>示例：</p>
-<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">auto</span> lambda = []() &#123; std::cout &lt;&lt; <span class="string">&quot;Hello, Lambda!&quot;</span> &lt;&lt; std::endl; &#125;;</span><br><span class="line"><span class="built_in">lambda</span>(); <span class="comment">// 调用 Lambda 表达式</span></span><br></pre></td></tr></table></figure>
-<p>Lambda
-表达式捕获外部变量的方式：值捕获、引用捕获、隐式捕获等，并讨论其影响和使用场景。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> x = <span class="number">5</span>;</span><br><span class="line"><span class="keyword">auto</span> lambda = [x]() &#123; std::cout &lt;&lt; <span class="string">&quot;Captured value: &quot;</span> &lt;&lt; x &lt;&lt; std::endl; &#125;;</span><br><span class="line"><span class="built_in">lambda</span>(); <span class="comment">// 输出捕获的值 x</span></span><br></pre></td></tr></table></figure>
-<p>Lambda
-表达式的参数传递和返回类型推导的规则，以及如何显式指定参数类型和返回类型。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="keyword">auto</span> lambda = [](<span class="keyword">int</span> a, <span class="keyword">int</span> b) -&gt; <span class="keyword">int</span> &#123; <span class="keyword">return</span> a + b; &#125;;</span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Sum: &quot;</span> &lt;&lt; <span class="built_in">lambda</span>(<span class="number">3</span>, <span class="number">4</span>) &lt;&lt; std::endl; <span class="comment">// 输出 7</span></span><br></pre></td></tr></table></figure>
-<h2 id="lambda-表达式的使用">Lambda 表达式的使用</h2>
-<p>Lambda 表达式在现代 C++ 编程中的常见用法和实际应用场景，如 STL
-算法、回调函数、多线程编程等。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line">std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line"><span class="keyword">int</span> count = std::<span class="built_in">count_if</span>(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123; <span class="keyword">return</span> x % <span class="number">2</span> == <span class="number">0</span>; &#125;);</span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Count of even numbers: &quot;</span> &lt;&lt; count &lt;&lt; std::endl;</span><br></pre></td></tr></table></figure>
-<p>对比 Lambda
-表达式与传统的函数指针和函数对象的异同点，包括性能、可读性和灵活性等方面的比较。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Lambda 表达式作为回调函数</span></span><br><span class="line">std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line">std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123; std::cout &lt;&lt; x &lt;&lt; std::endl; &#125;);</span><br></pre></td></tr></table></figure>
-<h2 id="高级话题和技巧">高级话题和技巧</h2>
-<p>Lambda
-表达式与其捕获变量之间的关系，涉及变量的生命周期和作用域，以及闭包的概念。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;functional&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function">std::function&lt;<span class="title">int</span><span class="params">(<span class="keyword">int</span>)</span>&gt; <span class="title">closureExample</span><span class="params">(<span class="keyword">int</span> x)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> [x](<span class="keyword">int</span> y) &#123; <span class="keyword">return</span> x + y; &#125;;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> lambda = <span class="built_in">closureExample</span>(<span class="number">5</span>);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Closure result: &quot;</span> &lt;&lt; <span class="built_in">lambda</span>(<span class="number">3</span>) &lt;&lt; std::endl; <span class="comment">// 输出 8</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>如何在多线程编程中使用 Lambda
-表达式，以及如何正确处理共享状态和线程安全性。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;thread&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;mutex&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line">    std::mutex mtx;</span><br><span class="line"></span><br><span class="line">    std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [&amp;](<span class="keyword">int</span>&amp; x) &#123;</span><br><span class="line">        std::lock_guard&lt;std::mutex&gt; <span class="built_in">lock</span>(mtx);</span><br><span class="line">        x *= <span class="number">2</span>;</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123;</span><br><span class="line">        std::cout &lt;&lt; x &lt;&lt; std::endl; <span class="comment">// 输出修改后的值</span></span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>最佳实践和性能优化建议，包括避免过度捕获、使用移动语义、避免引起资源泄漏等。</p>
-<p>示例：</p>
-<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;algorithm&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; vec = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 使用引用捕获，避免不必要的值捕获</span></span><br><span class="line">    <span class="keyword">int</span> sum = <span class="number">0</span>;</span><br><span class="line">    std::for_each(vec.<span class="built_in">begin</span>(), vec.<span class="built_in">end</span>(), [&amp;](<span class="keyword">int</span> x) &#123; sum += x; &#125;);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Sum: &quot;</span> &lt;&lt; sum &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 使用移动语义，提高性能</span></span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; anotherVec = &#123;<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>&#125;;</span><br><span class="line">    std::for_each(anotherVec.<span class="built_in">begin</span>(), anotherVec.<span class="built_in">end</span>(), [vec = std::<span class="built_in">move</span>(vec)](<span class="keyword">int</span> x) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;Moved vector element: &quot;</span> &lt;&lt; x &lt;&lt; std::endl;</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>Lambda 表达式为 C++
-编程带来了更加灵活和强大的编程手段，通过上述示例的讲解，读者可以更全面地了解和应用
-Lambda 表达式。通过 Lambda 表达式，C++
-的编程范式也更加现代化和高效化。</p>
-]]></content>
   </entry>
   <entry>
     <title>经典多层金字塔锐化(Multi-Level Pyramid Edge Enhancement)</title>
@@ -1514,45 +1465,53 @@ Loss)</strong>：结合感知损失和风格损失,
       </tags>
   </entry>
   <entry>
-    <title>高通平台ISP调试记录(1)-ANR</title>
-    <url>/2023/05/07/%E9%AB%98%E9%80%9A%E5%B9%B3%E5%8F%B0ISP%E8%B0%83%E8%AF%95%E8%AE%B0%E5%BD%95-1-ANR/</url>
+    <title>探索C++中的Lambda表达式</title>
+    <url>/2023/12/14/%E6%8E%A2%E7%B4%A2C-%E4%B8%AD%E7%9A%84Lambda%E8%A1%A8%E8%BE%BE%E5%BC%8F/</url>
     <content><![CDATA[<meta name="referrer" content="no-referrer" />
-<p>anr模块</p>
+<p>Lambda 表达式是 C++11
+引入的一个重要特性，它为函数式编程风格提供了更灵活和便利的方法。本文将探讨
+Lambda
+表达式的基础知识、语法结构、使用场景以及与传统函数指针和函数对象的比较。</p>
 <span id="more"></span>
-<p>enable_grey_treatment_thr_modification</p>
-<p>控制开启边缘去彩噪</p>
-<p>detect_grey_condition_chromaticity_thr_low</p>
-<p>detect_grey_condition_chromaticity_thr_high</p>
-<p>detect_grey_condition_y_max_derivative_thr_low</p>
-<p>detect_grey_condition_y_max_derivative_thr_high</p>
-<p>检测是否需要去彩噪的threshold</p>
-<p>thr_modification_target_y</p>
-<p>thr_modification_target_u</p>
-<p>thr_modification_target_v</p>
-<p>检测到需要加强edge false color denois才生效, 值越打越强</p>
-<p>luma_filter_lut_thr_y</p>
-<p>luma_filter_lut_thr_uv</p>
-<p>为了解决lsc导致的噪声，按照半径区分, 值越大去噪越强</p>
-<p>chroma_filter_lut_thr_y</p>
-<p>chroma_filter_lut_thr_uv</p>
-<p>为了解决lsc导致的噪声，按照半径区分, 值越大去噪越强</p>
-<p>y_threshold_per_y</p>
-<p>u_threshold_per_y</p>
-<p>v_threshold_per_y</p>
-<p>值越大去噪越强, 最常用</p>
-<p>luma_input_indication_thr_modification_scale</p>
-<p>chroma_input_indication_thr_modification_scale</p>
-<p>full path上不认为是噪声, 但是DC4上需要做去噪, 此时开启inter length,
-如果inter length的值为32, 则full path 的threshold就是full path
-threshold的2倍</p>
-<p>dcblend2_luma_strength_function</p>
-<p>dcblend2_chroma_strength_function（0 0 0 0 64 128）融合权重最大值,
-去噪最强</p>
-<p>一般不动</p>
+<h2 id="lambda-表达式的基础知识">Lambda 表达式的基础知识</h2>
+<p>Lambda 表达式的基本语法结构，包括捕获列表、参数列表、可选的 mutable
+修饰符、返回类型和函数体。</p>
+<p>示例：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">auto</span> lambda = []() &#123; std::cout &lt;&lt; <span class="string">&quot;Hello, Lambda!&quot;</span> &lt;&lt; std::endl; &#125;;</span><br><span class="line"><span class="built_in">lambda</span>(); <span class="comment">// 调用 Lambda 表达式</span></span><br></pre></td></tr></table></figure>
+<p>Lambda
+表达式捕获外部变量的方式：值捕获、引用捕获、隐式捕获等，并讨论其影响和使用场景。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="keyword">int</span> x = <span class="number">5</span>;</span><br><span class="line"><span class="keyword">auto</span> lambda = [x]() &#123; std::cout &lt;&lt; <span class="string">&quot;Captured value: &quot;</span> &lt;&lt; x &lt;&lt; std::endl; &#125;;</span><br><span class="line"><span class="built_in">lambda</span>(); <span class="comment">// 输出捕获的值 x</span></span><br></pre></td></tr></table></figure>
+<p>Lambda
+表达式的参数传递和返回类型推导的规则，以及如何显式指定参数类型和返回类型。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="keyword">auto</span> lambda = [](<span class="keyword">int</span> a, <span class="keyword">int</span> b) -&gt; <span class="keyword">int</span> &#123; <span class="keyword">return</span> a + b; &#125;;</span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Sum: &quot;</span> &lt;&lt; <span class="built_in">lambda</span>(<span class="number">3</span>, <span class="number">4</span>) &lt;&lt; std::endl; <span class="comment">// 输出 7</span></span><br></pre></td></tr></table></figure>
+<h2 id="lambda-表达式的使用">Lambda 表达式的使用</h2>
+<p>Lambda 表达式在现代 C++ 编程中的常见用法和实际应用场景，如 STL
+算法、回调函数、多线程编程等。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line">std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line"><span class="keyword">int</span> count = std::<span class="built_in">count_if</span>(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123; <span class="keyword">return</span> x % <span class="number">2</span> == <span class="number">0</span>; &#125;);</span><br><span class="line">std::cout &lt;&lt; <span class="string">&quot;Count of even numbers: &quot;</span> &lt;&lt; count &lt;&lt; std::endl;</span><br></pre></td></tr></table></figure>
+<p>对比 Lambda
+表达式与传统的函数指针和函数对象的异同点，包括性能、可读性和灵活性等方面的比较。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="comment">// Lambda 表达式作为回调函数</span></span><br><span class="line">std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line">std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123; std::cout &lt;&lt; x &lt;&lt; std::endl; &#125;);</span><br></pre></td></tr></table></figure>
+<h2 id="高级话题和技巧">高级话题和技巧</h2>
+<p>Lambda
+表达式与其捕获变量之间的关系，涉及变量的生命周期和作用域，以及闭包的概念。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;functional&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function">std::function&lt;<span class="title">int</span><span class="params">(<span class="keyword">int</span>)</span>&gt; <span class="title">closureExample</span><span class="params">(<span class="keyword">int</span> x)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> [x](<span class="keyword">int</span> y) &#123; <span class="keyword">return</span> x + y; &#125;;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">auto</span> lambda = <span class="built_in">closureExample</span>(<span class="number">5</span>);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Closure result: &quot;</span> &lt;&lt; <span class="built_in">lambda</span>(<span class="number">3</span>) &lt;&lt; std::endl; <span class="comment">// 输出 8</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如何在多线程编程中使用 Lambda
+表达式，以及如何正确处理共享状态和线程安全性。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;thread&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;mutex&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; numbers = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line">    std::mutex mtx;</span><br><span class="line"></span><br><span class="line">    std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [&amp;](<span class="keyword">int</span>&amp; x) &#123;</span><br><span class="line">        std::lock_guard&lt;std::mutex&gt; <span class="built_in">lock</span>(mtx);</span><br><span class="line">        x *= <span class="number">2</span>;</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    std::for_each(numbers.<span class="built_in">begin</span>(), numbers.<span class="built_in">end</span>(), [](<span class="keyword">int</span> x) &#123;</span><br><span class="line">        std::cout &lt;&lt; x &lt;&lt; std::endl; <span class="comment">// 输出修改后的值</span></span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最佳实践和性能优化建议，包括避免过度捕获、使用移动语义、避免引起资源泄漏等。</p>
+<p>示例：</p>
+<figure class="highlight c++"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;vector&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;algorithm&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; vec = &#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125;;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 使用引用捕获，避免不必要的值捕获</span></span><br><span class="line">    <span class="keyword">int</span> sum = <span class="number">0</span>;</span><br><span class="line">    std::for_each(vec.<span class="built_in">begin</span>(), vec.<span class="built_in">end</span>(), [&amp;](<span class="keyword">int</span> x) &#123; sum += x; &#125;);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;Sum: &quot;</span> &lt;&lt; sum &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 使用移动语义，提高性能</span></span><br><span class="line">    std::vector&lt;<span class="keyword">int</span>&gt; anotherVec = &#123;<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>, <span class="number">9</span>, <span class="number">10</span>&#125;;</span><br><span class="line">    std::for_each(anotherVec.<span class="built_in">begin</span>(), anotherVec.<span class="built_in">end</span>(), [vec = std::<span class="built_in">move</span>(vec)](<span class="keyword">int</span> x) &#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;Moved vector element: &quot;</span> &lt;&lt; x &lt;&lt; std::endl;</span><br><span class="line">    &#125;);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Lambda 表达式为 C++
+编程带来了更加灵活和强大的编程手段，通过上述示例的讲解，读者可以更全面地了解和应用
+Lambda 表达式。通过 Lambda 表达式，C++
+的编程范式也更加现代化和高效化。</p>
 ]]></content>
-      <tags>
-        <tag>ISP</tag>
-      </tags>
   </entry>
   <entry>
     <title>超分辨率效果改善方案记录(1)</title>
@@ -1613,6 +1572,47 @@ mask) * Y_bi. 这个过程产生了最终图像, 根据融合mask的区域,
 ]]></content>
       <tags>
         <tag>SR</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>高通平台ISP调试记录(1)-ANR</title>
+    <url>/2023/05/07/%E9%AB%98%E9%80%9A%E5%B9%B3%E5%8F%B0ISP%E8%B0%83%E8%AF%95%E8%AE%B0%E5%BD%95-1-ANR/</url>
+    <content><![CDATA[<meta name="referrer" content="no-referrer" />
+<p>anr模块</p>
+<span id="more"></span>
+<p>enable_grey_treatment_thr_modification</p>
+<p>控制开启边缘去彩噪</p>
+<p>detect_grey_condition_chromaticity_thr_low</p>
+<p>detect_grey_condition_chromaticity_thr_high</p>
+<p>detect_grey_condition_y_max_derivative_thr_low</p>
+<p>detect_grey_condition_y_max_derivative_thr_high</p>
+<p>检测是否需要去彩噪的threshold</p>
+<p>thr_modification_target_y</p>
+<p>thr_modification_target_u</p>
+<p>thr_modification_target_v</p>
+<p>检测到需要加强edge false color denois才生效, 值越打越强</p>
+<p>luma_filter_lut_thr_y</p>
+<p>luma_filter_lut_thr_uv</p>
+<p>为了解决lsc导致的噪声，按照半径区分, 值越大去噪越强</p>
+<p>chroma_filter_lut_thr_y</p>
+<p>chroma_filter_lut_thr_uv</p>
+<p>为了解决lsc导致的噪声，按照半径区分, 值越大去噪越强</p>
+<p>y_threshold_per_y</p>
+<p>u_threshold_per_y</p>
+<p>v_threshold_per_y</p>
+<p>值越大去噪越强, 最常用</p>
+<p>luma_input_indication_thr_modification_scale</p>
+<p>chroma_input_indication_thr_modification_scale</p>
+<p>full path上不认为是噪声, 但是DC4上需要做去噪, 此时开启inter length,
+如果inter length的值为32, 则full path 的threshold就是full path
+threshold的2倍</p>
+<p>dcblend2_luma_strength_function</p>
+<p>dcblend2_chroma_strength_function（0 0 0 0 64 128）融合权重最大值,
+去噪最强</p>
+<p>一般不动</p>
+]]></content>
+      <tags>
+        <tag>ISP</tag>
       </tags>
   </entry>
   <entry>
